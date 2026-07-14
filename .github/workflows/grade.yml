@@ -38,6 +38,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Fail fast with a clear message if a required secret didn't reach the job.
+      # Prints ONLY set/missing + value length — never the value itself.
+      - name: Preflight — required secrets present
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          GRADER_KEY:   ${{ secrets.GRADER_KEY }}
+          COACH_URL:    ${{ secrets.COACH_URL }}
+          COACH_KEY:    ${{ secrets.COACH_KEY }}
+        run: |
+          missing=0
+          for name in SUPABASE_URL GRADER_KEY; do
+            val="${!name}"
+            if [ -z "$val" ]; then
+              echo "::error::Required secret '$name' is NOT set (empty in this job)."
+              missing=1
+            else
+              echo "$name: set (length ${#val})"
+            fi
+          done
+          for name in COACH_URL COACH_KEY; do
+            val="${!name}"
+            if [ -z "$val" ]; then
+              echo "::warning::Optional secret '$name' not set — written/task cells will route to review."
+            else
+              echo "$name: set (length ${#val})"
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "::error::Add the missing secret(s) as REPOSITORY secrets: Settings → Secrets and variables → Actions → Secrets tab → 'New repository secret' (NOT an Environment secret, unless the job declares that environment)."
+            exit 1
+          fi
+          echo "All required secrets present."
+
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
 

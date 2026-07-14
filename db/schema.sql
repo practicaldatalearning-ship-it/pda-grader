@@ -22,7 +22,22 @@
 --
 -- Standing rules honoured: mobile schema stays isolated; nothing ALTERs public;
 -- the grader has claim-work + write-result + author-support only, nothing else.
+--
+-- APPLIED to the live shared DB on 2026-07-14 (migration `grader_role_and_rpcs`)
+-- after a per-column/constraint compatibility check.  The only live mismatch
+-- found was that mobile.assignments' author_status CHECK omitted 'authoring'
+-- (which grader_claim_author_jobs / grader_requeue_stuck write) — widened below
+-- as a prerequisite (expand-only; 0 existing rows violated).
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- 0) PREREQUISITE (mobile schema, expand-only): allow author_status='authoring'.
+--    The pda-admin authoring build only used pending/ready/error; the grader
+--    adds the transient 'authoring' claim state.  Not an ALTER of `public`.
+-- ----------------------------------------------------------------------------
+alter table mobile.assignments drop constraint if exists assignments_author_status_check;
+alter table mobile.assignments add constraint assignments_author_status_check
+  check (author_status in ('pending','authoring','ready','error'));
 
 -- ----------------------------------------------------------------------------
 -- 1) The restricted role + storage access + idempotency indexes.

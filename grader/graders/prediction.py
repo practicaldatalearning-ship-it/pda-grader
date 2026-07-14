@@ -19,12 +19,30 @@ def _read_csv(raw: bytes):
     return pd.read_csv(io.BytesIO(raw))
 
 
-def _score_from_thresholds(metric: str, value: float, thresholds: list, pts: float) -> float:
+def _normalize_thresholds(thresholds, pts: float) -> list[tuple[float, float]]:
+    """Accept either shape the authoring UIs produce and return [(bound, award_pts), ...]:
+      * list of pairs: [[30000, "full"], [40000, 7], [60000, 4]]
+      * object:        {"pass": 30000}  → full points at that bound
+                       {"full": 30000, "7": 40000, "4": 60000}  → key = award
+    """
+    pairs: list[tuple[float, float]] = []
+    if isinstance(thresholds, dict):
+        for k, v in thresholds.items():
+            key = str(k).lower()
+            award = pts if key in ("pass", "full", "true") else float(k)
+            pairs.append((float(v), award))
+    elif isinstance(thresholds, (list, tuple)):
+        for item in thresholds:
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                award = pts if str(item[1]).lower() == "full" else float(item[1])
+                pairs.append((float(item[0]), award))
+    return pairs
+
+
+def _score_from_thresholds(metric: str, value: float, thresholds, pts: float) -> float:
     lo = lower_is_better(metric)
     best = 0.0
-    for bound, award in thresholds:
-        bound = float(bound)
-        award_pts = pts if str(award).lower() == "full" else float(award)
+    for bound, award_pts in _normalize_thresholds(thresholds, pts):
         hit = (value <= bound) if lo else (value >= bound)
         if hit:
             best = max(best, award_pts)

@@ -154,6 +154,31 @@ def test_prediction_rmse_partial():
     assert r.score == 2  # 60 > 50, <= 100
 
 
+def test_prediction_thresholds_object_form():
+    # the admin authoring UI writes {"pass": N}, not a list of pairs
+    preds = pd.DataFrame({"id": [1, 2, 3], "price": [100000, 200000, 300000]})
+    labels = pd.DataFrame({"id": [1, 2, 3], "price": [110000, 190000, 305000]})  # rmse ~8.5k
+    ctx = GradeContext(
+        artifacts={"predictions.csv": preds.to_csv(index=False).encode()},
+        labels={"q1": labels.to_csv(index=False).encode()},
+    )
+    cfg = {"id_col": "id", "target_col": "price", "thresholds": {"pass": 30000}}  # metric defaults to rmse
+    r = grade_question(q("prediction", 50, config=cfg), ctx)
+    assert r.score == 50 and r.verdict == "pass"
+
+
+def test_prediction_thresholds_object_form_fail():
+    preds = pd.DataFrame({"id": [1, 2, 3], "price": [100000, 200000, 300000]})
+    labels = pd.DataFrame({"id": [1, 2, 3], "price": [160000, 260000, 360000]})  # rmse ~60k
+    ctx = GradeContext(
+        artifacts={"predictions.csv": preds.to_csv(index=False).encode()},
+        labels={"q1": labels.to_csv(index=False).encode()},
+    )
+    cfg = {"id_col": "id", "target_col": "price", "thresholds": {"pass": 30000}}
+    r = grade_question(q("prediction", 50, config=cfg), ctx)
+    assert r.score == 0 and r.verdict == "fail"
+
+
 def test_prediction_missing_predictions():
     ctx = GradeContext(labels={"q1": b"id,target\n1,2\n"})
     r = grade_question(q("prediction", 10, config={"metric": "rmse"}), ctx)

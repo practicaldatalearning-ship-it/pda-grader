@@ -47,9 +47,15 @@ secret (rotates everything) or by `revoke grader from authenticator` in an incid
 | Secret | Value |
 |---|---|
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
-| `GRADER_KEY` | the minted `grader`-role JWT from step 2 |
+| `SUPABASE_ANON_KEY` | the project **anon / publishable** key (public — Settings → API → Project API keys → `anon`). Sent as the `apikey` header to satisfy the Supabase gateway; the grader role comes from `GRADER_KEY`. |
+| `GRADER_KEY` | the minted `grader`-role JWT from step 2 (sent as `Authorization: Bearer`) |
 | `COACH_URL` | the pda-coach worker base URL (LLM-judge for `written`/`task`) |
 | `COACH_KEY` | the pda-coach `x-coach-key` shared secret |
+
+> **Why two Supabase keys?** Supabase's API gateway rejects any `apikey` that isn't the
+> anon/publishable or service_role key (`{"message":"Invalid API key"}`). A custom-role JWT
+> is only valid as the `Authorization: Bearer` token. So the grader sends the public anon key
+> as `apikey` (gateway pass) and the restricted `GRADER_KEY` as the Bearer (role = `grader`).
 
 The grader runs without `COACH_*` too — `written`/`task` questions then degrade to the
 review queue instead of crashing (graceful).

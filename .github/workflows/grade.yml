@@ -42,13 +42,14 @@ jobs:
       # Prints ONLY set/missing + value length — never the value itself.
       - name: Preflight — required secrets present
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          GRADER_KEY:   ${{ secrets.GRADER_KEY }}
-          COACH_URL:    ${{ secrets.COACH_URL }}
-          COACH_KEY:    ${{ secrets.COACH_KEY }}
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GRADER_KEY:        ${{ secrets.GRADER_KEY }}
+          COACH_URL:         ${{ secrets.COACH_URL }}
+          COACH_KEY:         ${{ secrets.COACH_KEY }}
         run: |
           missing=0
-          for name in SUPABASE_URL GRADER_KEY; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY GRADER_KEY; do
             val="${!name}"
             if [ -z "$val" ]; then
               echo "::error::Required secret '$name' is NOT set (empty in this job)."
@@ -86,9 +87,10 @@ jobs:
       - name: Run the grader batch
         run: python -m grader.main
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          GRADER_KEY:   ${{ secrets.GRADER_KEY }}
-          COACH_URL:    ${{ secrets.COACH_URL }}
-          COACH_KEY:    ${{ secrets.COACH_KEY }}
-          GRADER_BATCH: ${{ github.event.inputs.batch || '15' }}
-          GRADER_IMAGE: pda-sandbox
+          SUPABASE_URL:      ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          GRADER_KEY:        ${{ secrets.GRADER_KEY }}
+          COACH_URL:         ${{ secrets.COACH_URL }}
+          COACH_KEY:         ${{ secrets.COACH_KEY }}
+          GRADER_BATCH:      ${{ github.event.inputs.batch || '15' }}
+          GRADER_IMAGE:      pda-sandbox

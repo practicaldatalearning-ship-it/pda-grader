@@ -25,12 +25,13 @@ class Supa:
     def __init__(self, cfg: Config, session: Optional[requests.Session] = None):
         self.cfg = cfg
         self.s = session or requests.Session()
-        # PostgREST needs both apikey and Authorization; both carry the restricted key.
-        self._headers = {
-            "apikey": cfg.grader_key,
+        # Supabase's gateway validates `apikey` (must be the anon/publishable key);
+        # PostgREST derives the role from the `Authorization: Bearer` JWT (grader).
+        self._auth = {
+            "apikey": cfg.anon_key,
             "Authorization": f"Bearer {cfg.grader_key}",
-            "Content-Type": "application/json",
         }
+        self._headers = {**self._auth, "Content-Type": "application/json"}
 
     # ---- RPC ----------------------------------------------------------------
     def _rpc(self, fn: str, params: dict[str, Any]) -> Any:
@@ -95,9 +96,7 @@ class Supa:
     def download(self, bucket: str, path: str) -> bytes:
         """Download a private object via the authenticated endpoint (role=grader)."""
         url = f"{self.cfg.storage_url}/object/authenticated/{bucket}/{path}"
-        r = self.s.get(url, headers={"apikey": self.cfg.grader_key,
-                                     "Authorization": f"Bearer {self.cfg.grader_key}"},
-                       timeout=60)
+        r = self.s.get(url, headers=self._auth, timeout=60)
         if r.status_code >= 400:
             raise SupaError(f"download {bucket}/{path} -> {r.status_code}")
         return r.content
@@ -107,8 +106,7 @@ class Supa:
         """Upsert an object (author job writes the generated student notebook)."""
         url = f"{self.cfg.storage_url}/object/{bucket}/{path}"
         r = self.s.post(url, data=data, headers={
-            "apikey": self.cfg.grader_key,
-            "Authorization": f"Bearer {self.cfg.grader_key}",
+            **self._auth,
             "Content-Type": content_type,
             "x-upsert": "true",
         }, timeout=60)

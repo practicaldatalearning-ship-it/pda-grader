@@ -27,7 +27,8 @@ def _optional(name: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class Config:
     supabase_url: str          # e.g. https://<ref>.supabase.co
-    grader_key: str            # restricted JWT (role=grader) — NOT service_role
+    anon_key: str              # PUBLIC anon/publishable key — sent as the `apikey` header
+    grader_key: str            # restricted JWT (role=grader) — sent as `Authorization: Bearer`
     coach_url: str             # pda-coach worker base URL (LLM-judge)
     coach_key: str             # x-coach-key shared secret
     batch: int                 # submissions per run
@@ -51,6 +52,9 @@ class Config:
 def load_config() -> Config:
     return Config(
         supabase_url=_require("SUPABASE_URL"),
+        # PUBLIC key (anon/publishable). Supabase's gateway validates the `apikey`
+        # header against it; the grader role itself comes from GRADER_KEY (Bearer).
+        anon_key=_require("SUPABASE_ANON_KEY"),
         grader_key=_require("GRADER_KEY"),
         # Coach is optional at load time: written/task questions degrade to
         # 'review' if it is absent, but the batch still runs (G4 graceful).

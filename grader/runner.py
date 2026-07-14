@@ -69,6 +69,19 @@ def run_notebook(
     """Execute work_dir/nb_name inside the sandbox; harvest artifacts from work_dir."""
     work_dir = Path(work_dir).resolve()
 
+    # The bind-mounted /work is created by THIS process (host uid, e.g. the CI
+    # runner's 1001) with a restrictive default mode, but the sandbox runs as a
+    # FIXED non-root uid (1000, see _sandbox_flags --user). Unless we relax the
+    # perms, that uid can't read /work/nb.ipynb or write executed.ipynb /
+    # answers.json -> papermill exits non-zero ("notebook run failed"). The dir
+    # is ephemeral, --network none, --rm, so world-access here is safe.
+    try:
+        os.chmod(work_dir, 0o777)
+        for _p in work_dir.rglob("*"):
+            os.chmod(_p, 0o777 if _p.is_dir() else 0o666)
+    except OSError as _e:
+        log.warning("could not relax /work perms: %s", _e)
+
     # `timeout` (coreutils) caps wall-clock even if papermill hangs; papermill's
     # own --execution-timeout caps a single stuck cell. mkdir the tmpfs scratch dirs.
     inner = (

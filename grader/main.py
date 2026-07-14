@@ -31,6 +31,16 @@ log = logging.getLogger("grader.main")
 WRITTEN_TAGS = {"written", "task"}
 
 
+def _err_detail(res: RunResult, fallback: str) -> str:
+    """A DB-storable error string that includes the tail of the sandbox stderr
+    (the real papermill traceback) so a failure is self-diagnosing, not opaque."""
+    detail = res.error or fallback
+    tail = (res.stderr or "").strip()
+    if tail:
+        detail = f"{detail} :: {tail[-400:]}"
+    return detail[:500]
+
+
 def _basename(path: str) -> str:
     return posixpath.basename(path or "")
 
@@ -91,7 +101,7 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
         if not res.ok and not res.artifacts.get("answers.json"):
             # total failure — no answers dumped: record error, keep the batch moving
             supa.write_result(submission_id, 0.0, [], "error",
-                              (res.error or "notebook failed to execute")[:500])
+                              _err_detail(res, "notebook failed to execute"))
             log.info("submission %s -> error (%s)", submission_id, res.error)
             return
 
@@ -185,7 +195,7 @@ def author_assignment(supa: Supa, cfg: Config, job: dict) -> None:
             res = run_notebook(cfg.docker_image, work, timeout=cfg.run_timeout)
             if not res.ok and not res.artifacts.get("answers.json"):
                 supa.write_authored(aid, None, {}, "error",
-                                    (res.error or "solution notebook failed")[:500])
+                                    _err_detail(res, "solution notebook failed"))
                 log.info("author %s -> error (%s)", aid, res.error)
                 return
             answers = read_answers(res.artifacts.get("answers.json"))

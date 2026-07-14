@@ -1,0 +1,20 @@
+name: security-check
+
+# Runs on every push and PR. A failure BLOCKS merge (make it a required check in
+# branch protection). This is the enforcement that can't be skipped locally.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run security scan (STRICT-INSTRUCTIONS.md)
+        run: bash scripts/security-check.sh

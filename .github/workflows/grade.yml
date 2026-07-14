@@ -1,0 +1,61 @@
+name: grade
+
+# Triggered by Supabase pg_cron -> repository_dispatch (hourly, see doc/TRIGGER.md),
+# or manually via "Run workflow". NEVER by fork PRs (they receive no secrets).
+on:
+  repository_dispatch:
+    types: [grade-batch]
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: "Max submissions to grade this run"
+        required: false
+        default: "15"
+
+concurrency:
+  group: grade
+  cancel-in-progress: false   # never interrupt a batch mid-grade
+
+permissions:
+  contents: read
+
+jobs:
+  # Unit tests gate the grader logic (Docker-free). Also runs on push via the
+  # security-check trigger being separate; here it guards manual/dispatch runs.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q
+
+  grade:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install grader deps
+        run: pip install -r requirements.txt
+
+      - name: Build sandbox image
+        run: docker build -t pda-sandbox sandbox/
+
+      - name: Sanity-check the sandbox (no network, imports work)
+        run: docker run --rm --network none pda-sandbox python -c "import pandas, sklearn, papermill; print('ok')"
+
+      - name: Run the grader batch
+        run: python -m grader.main
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          GRADER_KEY:   ${{ secrets.GRADER_KEY }}
+          COACH_URL:    ${{ secrets.COACH_URL }}
+          COACH_KEY:    ${{ secrets.COACH_KEY }}
+          GRADER_BATCH: ${{ github.event.inputs.batch || '15' }}
+          GRADER_IMAGE: pda-sandbox

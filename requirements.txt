@@ -1,0 +1,13 @@
+# pda-grader runtime (the orchestrator that runs in GitHub Actions).
+# The heavy data-science stack lives in the sandbox image (sandbox/Dockerfile),
+# NOT here — this process only orchestrates: claim, run-in-docker, grade, write.
+requests==2.32.3
+nbformat==5.10.4
+
+# Objective grading (metrics + output_match comparison) runs in-process here.
+numpy==2.1.3
+pandas==2.2.3
+scikit-learn==1.5.2
+
+# Tests
+pytest==8.3.3

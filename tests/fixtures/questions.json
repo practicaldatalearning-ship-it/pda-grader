@@ -1,0 +1,59 @@
+{
+  "assignment": {
+    "id": "00000000-0000-0000-0000-0000000000aa",
+    "lesson_id": "00000000-0000-0000-0000-0000000000bb",
+    "title": "House prices — synthetic sample",
+    "total_points": 15,
+    "pass_mark": 60
+  },
+  "questions": [
+    {
+      "id": "q-exact",
+      "cell_ref": "2",
+      "var_name": "n_missing",
+      "tag": "exact",
+      "points": 2,
+      "config": { "tolerance": 0 },
+      "expected": { "value": 3 }
+    },
+    {
+      "id": "q-property",
+      "cell_ref": "3",
+      "var_name": "top_feature",
+      "tag": "property",
+      "points": 3,
+      "config": { "property": "corr>0.5", "target": "price", "data": "train.csv" },
+      "expected": null
+    },
+    {
+      "id": "q-prediction",
+      "cell_ref": "5",
+      "var_name": null,
+      "tag": "prediction",
+      "points": 8,
+      "config": {
+        "metric": "rmse",
+        "id_col": "id",
+        "target_col": "price",
+        "label_path": "labels.csv",
+        "thresholds": [[30000, "full"], [40000, 6], [60000, 3]]
+      },
+      "expected": null
+    },
+    {
+      "id": "q-written",
+      "cell_ref": "6",
+      "var_name": "explanation",
+      "tag": "written",
+      "points": 2,
+      "config": {
+        "prompt": "Explain which feature drove your model and why.",
+        "rubric": [
+          { "text": "Names the most predictive feature", "points": 1 },
+          { "text": "Gives a sound reason", "points": 1 }
+        ]
+      },
+      "expected": null
+    }
+  ]
+}

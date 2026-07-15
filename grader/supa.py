@@ -32,6 +32,7 @@ class Supa:
             "Authorization": f"Bearer {cfg.grader_key}",
         }
         self._headers = {**self._auth, "Content-Type": "application/json"}
+        self._s3 = None  # lazy boto3 R2 client (object storage)
 
     # ---- RPC ----------------------------------------------------------------
     def _rpc(self, fn: str, params: dict[str, Any]) -> Any:
@@ -92,23 +93,41 @@ class Supa:
             "p_error": error,
         })
 
-    # ---- Storage ------------------------------------------------------------
+    # ---- Storage (Cloudflare R2, S3 API) ------------------------------------
+    def _r2(self):
+        """Lazily build the boto3 R2 client. Path-style + s3v4 for a custom endpoint."""
+        if self._s3 is None:
+            import boto3
+            from botocore.config import Config as BotoConfig
+            self._s3 = boto3.client(
+                "s3",
+                endpoint_url=self.cfg.r2_s3_endpoint,
+                aws_access_key_id=self.cfg.r2_access_key,
+                aws_secret_access_key=self.cfg.r2_secret,
+                region_name="auto",
+                config=BotoConfig(
+                    signature_version="s3v4",
+                    s3={"addressing_style": "path"},
+                    retries={"max_attempts": 3, "mode": "standard"},
+                ),
+            )
+        return self._s3
+
     def download(self, bucket: str, path: str) -> bytes:
-        """Download a private object via the authenticated endpoint (role=grader)."""
-        url = f"{self.cfg.storage_url}/object/authenticated/{bucket}/{path}"
-        r = self.s.get(url, headers=self._auth, timeout=60)
-        if r.status_code >= 400:
-            raise SupaError(f"download {bucket}/{path} -> {r.status_code}")
-        return r.content
+        """Download a private object from its R2 bucket (bucket = logical name)."""
+        try:
+            obj = self._r2().get_object(Bucket=self.cfg.r2_bucket_for(bucket), Key=path)
+            return obj["Body"].read()
+        except Exception as e:  # boto3 ClientError etc.
+            raise SupaError(f"download {bucket}/{path} -> {e}")
 
     def upload(self, bucket: str, path: str, data: bytes,
                content_type: str = "application/octet-stream") -> None:
         """Upsert an object (author job writes the generated student notebook)."""
-        url = f"{self.cfg.storage_url}/object/{bucket}/{path}"
-        r = self.s.post(url, data=data, headers={
-            **self._auth,
-            "Content-Type": content_type,
-            "x-upsert": "true",
-        }, timeout=60)
-        if r.status_code >= 400:
-            raise SupaError(f"upload {bucket}/{path} -> {r.status_code}: {r.text[:200]}")
+        try:
+            self._r2().put_object(
+                Bucket=self.cfg.r2_bucket_for(bucket), Key=path,
+                Body=data, ContentType=content_type,
+            )
+        except Exception as e:
+            raise SupaError(f"upload {bucket}/{path} -> {e}")

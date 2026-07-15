@@ -47,9 +47,14 @@ jobs:
           GRADER_KEY:        ${{ secrets.GRADER_KEY }}
           COACH_URL:         ${{ secrets.COACH_URL }}
           COACH_KEY:         ${{ secrets.COACH_KEY }}
+          R2_ACCOUNT_ID:         ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:      ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY:  ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_CONTENT:     ${{ secrets.R2_BUCKET_CONTENT }}
+          R2_BUCKET_SUBMISSIONS: ${{ secrets.R2_BUCKET_SUBMISSIONS }}
         run: |
           missing=0
-          for name in SUPABASE_URL SUPABASE_ANON_KEY GRADER_KEY; do
+          for name in SUPABASE_URL SUPABASE_ANON_KEY GRADER_KEY R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET_CONTENT R2_BUCKET_SUBMISSIONS; do
             val="${!name}"
             if [ -z "$val" ]; then
               echo "::error::Required secret '$name' is NOT set (empty in this job)."
@@ -92,5 +97,11 @@ jobs:
           GRADER_KEY:        ${{ secrets.GRADER_KEY }}
           COACH_URL:         ${{ secrets.COACH_URL }}
           COACH_KEY:         ${{ secrets.COACH_KEY }}
+          R2_ACCOUNT_ID:         ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID:      ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY:  ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_S3_ENDPOINT:        ${{ secrets.R2_S3_ENDPOINT }}
+          R2_BUCKET_CONTENT:     ${{ secrets.R2_BUCKET_CONTENT }}
+          R2_BUCKET_SUBMISSIONS: ${{ secrets.R2_BUCKET_SUBMISSIONS }}
           GRADER_BATCH:      ${{ github.event.inputs.batch || '15' }}
           GRADER_IMAGE:      pda-sandbox

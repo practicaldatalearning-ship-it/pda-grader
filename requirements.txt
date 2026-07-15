@@ -4,6 +4,9 @@
 requests==2.32.3
 nbformat==5.10.4
 
+# Object storage: Cloudflare R2 via the S3 API (DB stays on Supabase).
+boto3>=1.35,<2
+
 # Objective grading (metrics + output_match comparison) runs in-process here.
 numpy==2.1.3
 pandas==2.2.3

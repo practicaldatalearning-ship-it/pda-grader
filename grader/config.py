@@ -35,6 +35,13 @@ class Config:
     docker_image: str          # sandbox image tag
     run_timeout: int           # per-notebook wall-clock cap (seconds)
     grade_author_jobs: bool    # also run G0b author jobs this run
+    # Object storage lives in Cloudflare R2 (S3 API). DB stays on Supabase.
+    r2_account_id: str = ""
+    r2_access_key: str = ""
+    r2_secret: str = ""
+    r2_endpoint: str = ""
+    r2_bucket_content: str = ""
+    r2_bucket_submissions: str = ""
 
     @property
     def rest_url(self) -> str:
@@ -43,6 +50,28 @@ class Config:
     @property
     def storage_url(self) -> str:
         return f"{self.supabase_url.rstrip('/')}/storage/v1"
+
+    @property
+    def r2_s3_endpoint(self) -> str:
+        base = self.r2_endpoint or (
+            f"https://{self.r2_account_id}.r2.cloudflarestorage.com" if self.r2_account_id else ""
+        )
+        if not base:
+            raise ConfigError("R2 not configured: set R2_S3_ENDPOINT or R2_ACCOUNT_ID.")
+        return base.rstrip("/")
+
+    def r2_bucket_for(self, logical: str) -> str:
+        """Map the DB's logical bucket name to the real R2 bucket."""
+        mapping = {
+            "assignment-content": self.r2_bucket_content,
+            "assignment-submissions": self.r2_bucket_submissions,
+        }
+        b = mapping.get(logical, "")
+        if not b:
+            raise ConfigError(
+                f"No R2 bucket for logical '{logical}' — set R2_BUCKET_CONTENT / R2_BUCKET_SUBMISSIONS."
+            )
+        return b
 
     @property
     def has_coach(self) -> bool:
@@ -64,4 +93,10 @@ def load_config() -> Config:
         docker_image=_optional("GRADER_IMAGE", "pda-sandbox"),
         run_timeout=int(_optional("GRADER_RUN_TIMEOUT", "300") or "300"),
         grade_author_jobs=_optional("GRADER_AUTHOR_JOBS", "1") not in ("0", "false", "no"),
+        r2_account_id=_optional("R2_ACCOUNT_ID"),
+        r2_access_key=_optional("R2_ACCESS_KEY_ID"),
+        r2_secret=_optional("R2_SECRET_ACCESS_KEY"),
+        r2_endpoint=_optional("R2_S3_ENDPOINT"),
+        r2_bucket_content=_optional("R2_BUCKET_CONTENT"),
+        r2_bucket_submissions=_optional("R2_BUCKET_SUBMISSIONS"),
     )

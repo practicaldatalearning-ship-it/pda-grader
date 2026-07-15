@@ -247,12 +247,18 @@ def author_assignment(supa: Supa, cfg: Config, job: dict) -> None:
                 cells.append(cell)
             student_nb.cells = cells
 
-            # upload student notebook to assignment-content
-            student_path = f"{aid}/student-notebook.ipynb"
-            supa.upload("assignment-content", student_path,
-                        nbformat.writes(student_nb).encode("utf-8"), "application/x-ipynb+json")
-            supa.write_authored(aid, student_path, expected, "ready")
-            log.info("author %s -> ready (%d expected captured)", aid, len(expected))
+            # Keep an admin-provided question notebook; otherwise generate one
+            # from the stripped answer key. (write_authored coalesces None -> keep.)
+            existing_student = (assignment.get("student_notebook_path") or "").strip()
+            if existing_student:
+                supa.write_authored(aid, None, expected, "ready")
+                log.info("author %s -> ready (kept admin question nb; %d expected)", aid, len(expected))
+            else:
+                student_path = f"{aid}/student-notebook.ipynb"
+                supa.upload("assignment-content", student_path,
+                            nbformat.writes(student_nb).encode("utf-8"), "application/x-ipynb+json")
+                supa.write_authored(aid, student_path, expected, "ready")
+                log.info("author %s -> ready (%d expected captured)", aid, len(expected))
     except Exception as e:
         log.exception("author job %s failed", aid)
         try:

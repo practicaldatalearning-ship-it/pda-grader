@@ -16,7 +16,7 @@ from typing import Any, Optional
 import nbformat
 
 from .config import Config, load_config
-from .extract import (inject_dump, inject_tests, read_answers)
+from .extract import (inject_dump, inject_tests, read_answers, cell_assign_targets, cell_source)
 from .graders import GradeContext, grade_question
 from .llm_judge import make_judge
 from .runner import RunResult, run_notebook
@@ -87,8 +87,16 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
             except Exception as e:
                 log.warning("label download failed q=%s: %s", qid, e)
 
-        # 2) inject answer-dump + hidden tests, write the runnable notebook
+        # 2) inject answer-dump + hidden tests, write the runnable notebook.
+        # Explicit var_names + the 'auto' vars captured at authoring (stored in expected).
         var_names = [q.get("var_name") for q in questions if q.get("var_name")]
+        for q in questions:
+            tag = q.get("tag") or ""
+            exp = q.get("expected") or {}
+            if tag == "auto":
+                var_names += list((exp.get("values") or {}).keys())
+            elif tag == "written":
+                var_names += list(exp.get("vars") or [])
         nb = inject_dump(nb, var_names)
         tests_by_q = {str(q["id"]): (q.get("config") or {}).get("tests", "")
                       for q in questions if q.get("tag") == "tests" and (q.get("config") or {}).get("tests")}
@@ -188,8 +196,17 @@ def author_assignment(supa: Supa, cfg: Config, job: dict) -> None:
                 except Exception as e:
                     log.warning("author data dl failed %s: %s", d.get("path"), e)
 
-            # run the solution with the answer-dump to capture expected values
+            # Derive the vars to dump: explicit var_names + (for 'auto') the
+            # assignment targets parsed from each graded cell of the SOLUTION.
             var_names = [q.get("var_name") for q in questions if q.get("var_name")]
+            auto_vars: dict[str, list[str]] = {}
+            for q in questions:
+                tag = q.get("tag") or ""
+                # 'auto' + var-name-free 'written' derive their vars from the cell.
+                if tag == "auto" or (tag == "written" and not q.get("var_name")):
+                    vs = cell_assign_targets(cell_source(nb, q.get("cell_ref")))
+                    auto_vars[str(q["id"])] = vs
+                    var_names += vs
             run_nb = inject_dump(nb, var_names)
             nbformat.write(run_nb, str(work / "nb.ipynb"))
             res = run_notebook(cfg.docker_image, work, timeout=cfg.run_timeout)
@@ -205,10 +222,15 @@ def author_assignment(supa: Supa, cfg: Config, job: dict) -> None:
             for q in questions:
                 qid = str(q["id"])
                 tag = q.get("tag")
-                val = answers.get(q.get("var_name"))
                 if tag in ("exact", "output_match"):
-                    expected[qid] = {"value": val}
-                # set/property/tests/prediction/written/task: expected stays null (config-driven)
+                    expected[qid] = {"value": answers.get(q.get("var_name"))}
+                elif tag == "auto":
+                    # snapshot every variable this cell assigns in the solution
+                    expected[qid] = {"values": {v: answers.get(v) for v in auto_vars.get(qid, [])}}
+                elif tag == "written" and not q.get("var_name"):
+                    # remember which vars hold the (student's) explanation to judge
+                    expected[qid] = {"vars": auto_vars.get(qid, [])}
+                # prediction/task/set/property/tests: expected stays null (config-driven)
 
             # strip solutions -> student notebook
             answer_cell_refs = {q.get("cell_ref") for q in questions}

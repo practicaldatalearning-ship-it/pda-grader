@@ -7,6 +7,7 @@ process (it only runs inside the sandbox via runner.py).
 """
 from __future__ import annotations
 
+import ast
 import json
 from typing import Any, Optional
 
@@ -130,3 +131,53 @@ def deserialize_df(val: Any):
     if isinstance(val, dict) and val.get("__df__"):
         return pd.DataFrame(val.get("rows", []), columns=val.get("columns", []))
     return val
+
+
+# --- 'auto' authoring: figure out what a graded cell produces ----------------
+def cell_source(nb: nbformat.NotebookNode, cell_ref) -> str:
+    """The raw source of nb.cells[cell_ref] (cell_ref is a string/int index)."""
+    try:
+        idx = int(cell_ref)
+    except (TypeError, ValueError):
+        return ""
+    cells = nb.get("cells") or []
+    if 0 <= idx < len(cells):
+        src = cells[idx].get("source", "")
+        return "".join(src) if isinstance(src, list) else str(src)
+    return ""
+
+
+def _names_in_target(target: ast.AST) -> list[str]:
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        out: list[str] = []
+        for el in target.elts:
+            out += _names_in_target(el)
+        return out
+    return []
+
+
+def cell_assign_targets(source: str) -> list[str]:
+    """Top-level variables a cell assigns — the answers to grade for an 'auto' cell.
+
+    Parses `x = ...`, `x, y = ...`, `x: T = ...`, `x += ...` at module level only.
+    Ignores private (_underscore) names. Best-effort: returns [] on a syntax error.
+    """
+    try:
+        tree = ast.parse(source or "")
+    except SyntaxError:
+        return []
+    names: list[str] = []
+    for node in tree.body:  # top-level statements only
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                names += _names_in_target(t)
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            names += _names_in_target(node.target)
+    # de-dupe, preserve order, drop private/dunder
+    seen: dict[str, None] = {}
+    for n in names:
+        if not n.startswith("_"):
+            seen.setdefault(n, None)
+    return list(seen.keys())

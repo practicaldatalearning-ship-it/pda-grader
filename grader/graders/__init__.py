@@ -64,9 +64,10 @@ def grade_question(question: dict, ctx: GradeContext) -> QResult:
 
 
 # --- register objective graders (import after types are defined) ---
-from . import exact, set_, property_, output_match, tests_, prediction, written, task  # noqa: E402
+from . import auto, exact, set_, property_, output_match, tests_, prediction, written, task  # noqa: E402
 
 GRADERS.update({
+    "auto": auto.grade,
     "exact": exact.grade,
     "set": set_.grade,
     "property": property_.grade,

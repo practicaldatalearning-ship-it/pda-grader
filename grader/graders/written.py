@@ -20,6 +20,12 @@ def grade(question: dict, ctx: GradeContext) -> QResult:
     rubric = cfg.get("rubric") or []
     threshold = float(cfg.get("threshold") or REVIEW_DEFAULT)
     answer = ctx.answers.get(question.get("var_name"))
+    if answer is None:
+        # var-name-free authoring: gather the cell's auto-derived string vars
+        exp = question.get("expected") or {}
+        parts = [ctx.answers.get(v) for v in (exp.get("vars") or [])]
+        parts = [p for p in parts if isinstance(p, str) and p.strip()]
+        answer = "\n".join(parts) if parts else None
     answer_text = "" if answer is None else (answer if isinstance(answer, str) else str(answer))
 
     if ctx.judge is None:

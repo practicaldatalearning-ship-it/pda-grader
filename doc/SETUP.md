@@ -51,11 +51,28 @@ secret (rotates everything) or by `revoke grader from authenticator` in an incid
 | `GRADER_KEY` | the minted `grader`-role JWT from step 2 (sent as `Authorization: Bearer`) |
 | `COACH_URL` | the pda-coach worker base URL (LLM-judge for `written`/`task`) |
 | `COACH_KEY` | the pda-coach `x-coach-key` shared secret |
+| `R2_ACCOUNT_ID` | Cloudflare account id (used to build the S3 endpoint if `R2_S3_ENDPOINT` is unset) |
+| `R2_S3_ENDPOINT` | *(optional)* full S3 endpoint, e.g. `https://<account>.r2.cloudflarestorage.com` — overrides the account-id form |
+| `R2_ACCESS_KEY_ID` | R2 API token **Access Key ID** |
+| `R2_SECRET_ACCESS_KEY` | R2 API token **Secret Access Key** |
+| `R2_BUCKET_CONTENT` | the real R2 bucket holding assignment content (solution/student notebooks, data, labels) — maps from the DB's logical `assignment-content` |
+| `R2_BUCKET_SUBMISSIONS` | the real R2 bucket holding student uploads — maps from logical `assignment-submissions` |
 
 > **Why two Supabase keys?** Supabase's API gateway rejects any `apikey` that isn't the
 > anon/publishable or service_role key (`{"message":"Invalid API key"}`). A custom-role JWT
 > is only valid as the `Authorization: Bearer` token. So the grader sends the public anon key
 > as `apikey` (gateway pass) and the restricted `GRADER_KEY` as the Bearer (role = `grader`).
+
+> **Storage is on Cloudflare R2 (S3 API), not Supabase Storage.** The grader reads/writes
+> assignment objects via boto3 against R2; only the *database* stays on Supabase. The R2 API
+> token should be **scoped to just the two assignment buckets, read+write** (least privilege —
+> STRICT §1.3). The `grader_*` RPCs return **logical** bucket names (`assignment-content` /
+> `assignment-submissions`); `config.r2_bucket_for()` maps those to your real R2 buckets.
+>
+> ⚠️ **Cross-app dependency:** because storage moved to R2, the **pda-admin** (author uploads)
+> and **pda-public** (student uploads) surfaces must also read/write these assignment objects
+> in the **same R2 buckets** — otherwise the grader looks in R2 while the files sit in Supabase
+> Storage and downloads fail. Keep all three on R2 for these buckets.
 
 The grader runs without `COACH_*` too — `written`/`task` questions then degrade to the
 review queue instead of crashing (graceful).
@@ -80,6 +97,6 @@ review queue instead of crashing (graceful).
   `grader_write_result`, `grader_flag_review`, `grader_requeue_stuck`,
   `grader_claim_author_jobs`, `grader_write_authored`). No table access; RLS still denies
   the `grader` role direct reads/writes on `mobile.*`.
-- **Storage:** downloads assignment content + submissions and uploads the generated
-  student notebook — via the **authenticated** object endpoint with the same restricted
-  JWT, gated by RLS to the two assignment buckets. No service_role key, no signing secret.
+- **Storage:** downloads assignment content + submissions and uploads the generated student
+  notebook from **Cloudflare R2** (S3 API via boto3, path-style, s3v4). The R2 token is
+  scoped to the two assignment buckets, read+write. Supabase holds no assignment objects.

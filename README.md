@@ -40,8 +40,9 @@ Full architecture, data model, question tags, and UI live in the PDA strategy do
 - Every credential is injected at run time from a secret store (GitHub Actions Secrets / Supabase
   Vault) — **never** in this repo. A ZIP download exposes only grading code, nothing sensitive.
 - Student code runs sandboxed: `--network none`, non-root, resource + time caps, ephemeral.
-- The grader has **least-privilege** datastore access (claim-work + write-result only), not a full
-  admin key.
+- The grader has **least-privilege** datastore access (claim-work + write-result RPCs only, not a
+  full admin key) and a **bucket-scoped R2 token** for the assignment objects (read/write on the
+  two assignment buckets only). Object storage = Cloudflare R2 (S3 API); the DB = Supabase.
 - A **mandatory pre-push security scan** (`scripts/security-check.sh`) + a CI check block secrets
   from ever landing.
 

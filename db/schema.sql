@@ -61,7 +61,10 @@ create index if not exists assignment_submissions_status_submitted_idx
 create index if not exists assignments_author_status_idx
   on mobile.assignments(author_status);
 
--- Storage: READ assignment content + submissions; WRITE the generated student
+-- Storage: NOTE — object storage has since moved to Cloudflare R2 (S3 API); the
+-- grader no longer uses Supabase Storage. The storage.objects grants + policies
+-- below are now VESTIGIAL (harmless) and may be revoked in a later cleanup.
+-- READ assignment content + submissions; WRITE the generated student
 -- notebook back into assignment-content (author job).  RLS rows gated to grader.
 grant usage on schema storage to grader;
 grant select, insert, update on storage.objects to grader;

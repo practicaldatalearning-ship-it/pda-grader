@@ -113,8 +113,9 @@ only) and `assignment-submissions` (student uploads). The grader downloads via s
 **Grader input per submission:** the student notebook + the assignment's questions (tags + config +
 expected) + any hidden data (e.g. `labels.csv` for `prediction`).
 **Grader output per submission:** `total_score` (0..total_points), `per_question` =
-`[{question_id, score, max, verdict('pass'|'partial'|'fail'|'review'), feedback}]`, and a final
-`status`.
+`[{question_id, score, max, verdict('pass'|'partial'|'fail'|'review'), feedback, answer?}]`, and a
+final `status`. `answer` (optional) = the student's captured value for that question (compact,
+display-safe) — powers the "Your answer" row in the pda-public result UI; omitted when none captured.
 
 ---
 

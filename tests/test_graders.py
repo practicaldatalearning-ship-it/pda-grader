@@ -249,6 +249,33 @@ def test_task_missing_required_file():
 
 
 # --- dispatch / robustness ------------------------------------------------
+def test_per_question_includes_captured_answer():
+    # objective tags surface the captured var value as `answer` for the UI
+    ctx = GradeContext(answers={"ans": "income"})
+    d = grade_question(q("exact", 1, expected={"value": "income"}), ctx).as_dict()
+    assert d["answer"] == "income"
+
+
+def test_answer_absent_when_no_value():
+    ctx = GradeContext(answers={})
+    d = grade_question(q("exact", 1, expected={"value": 1}), ctx).as_dict()
+    assert "answer" not in d  # nothing captured → no "Your answer" row
+
+
+def test_written_answer_surfaces_essay():
+    ctx = GradeContext(answers={"ans": "Variance grows with the mean, so it is right-skewed."},
+                       judge=_FakeJudge(score=2, mx=2, confidence=1.0))
+    d = grade_question(q("written", 3, config={"rubric": [{"text": "x", "points": 2}]}), ctx).as_dict()
+    assert d["answer"].startswith("Variance grows")
+
+
+def test_answer_dataframe_is_compacted():
+    df_dump = {"__df__": True, "columns": ["a", "b"], "rows": [[1, 2], [3, 4]]}
+    ctx = GradeContext(answers={"ans": df_dump})
+    d = grade_question(q("output_match", 2, expected={"value": df_dump}), ctx).as_dict()
+    assert d["answer"] == "table: 2 rows × 2 cols"
+
+
 def test_unknown_tag_is_error_not_crash():
     ctx = GradeContext()
     r = grade_question(q("nonsense", 5), ctx)

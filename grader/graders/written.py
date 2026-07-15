@@ -8,7 +8,7 @@ is raised by main.py (which owns the DB handle).
 """
 from __future__ import annotations
 
-from . import GradeContext, QResult, _verdict
+from . import GradeContext, QResult, _display_answer, _verdict
 
 REVIEW_DEFAULT = 0.6
 
@@ -45,7 +45,9 @@ def grade(question: dict, ctx: GradeContext) -> QResult:
     # Scale the rubric total onto the question's points.
     scaled = pts * (jr.score / jr.max) if jr.max else 0.0
     scaled = round(min(pts, max(0.0, scaled)), 4)
+    shown = _display_answer(answer_text)  # the student's essay, for the "Your answer" row
     if jr.confidence < threshold:
         return QResult(qid, scaled, pts, "review",
-                       f"{jr.feedback} (low confidence {jr.confidence:.2f} → flagged for review)")
-    return QResult(qid, scaled, pts, _verdict(scaled, pts), jr.feedback)
+                       f"{jr.feedback} (low confidence {jr.confidence:.2f} → flagged for review)",
+                       answer=shown)
+    return QResult(qid, scaled, pts, _verdict(scaled, pts), jr.feedback, answer=shown)

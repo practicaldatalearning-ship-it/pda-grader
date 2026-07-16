@@ -1,4 +1,4 @@
-"""Sandboxed notebook execution via Docker + papermill.
+"""Sandboxed notebook execution via Docker + nbclient (allow_errors).
 
 Every submission runs with ALL of: --network none, non-root, read-only ROOTFS,
 dropped caps, no-new-privileges, CPU/RAM/PID caps, a hard wall-clock timeout,
@@ -82,12 +82,27 @@ def run_notebook(
     except OSError as _e:
         log.warning("could not relax /work perms: %s", _e)
 
-    # `timeout` (coreutils) caps wall-clock even if papermill hangs; papermill's
-    # own --execution-timeout caps a single stuck cell. mkdir the tmpfs scratch dirs.
+    # Execute with nbclient + allow_errors=True so a single failing cell does NOT
+    # void the whole submission: execution continues, the injected answer-dump still
+    # runs, and the executed notebook keeps each cell's error output for per-cell
+    # (V2) grading. `timeout` (coreutils) caps total wall-clock; nbclient's own
+    # per-cell timeout caps a single stuck cell; the try/finally always writes the
+    # executed notebook so partial work is still harvestable.
+    py = (
+        "import nbformat\n"
+        "from nbclient import NotebookClient\n"
+        f"nb = nbformat.read('/work/{nb_name}', as_version=4)\n"
+        "try:\n"
+        f"    NotebookClient(nb, timeout={int(timeout)}, kernel_name='python3',\n"
+        "                   allow_errors=True, resources={'metadata': {'path': '/work'}}).execute()\n"
+        "except Exception as _e:\n"
+        "    print('pda-grader: execution halted:', _e)\n"
+        "finally:\n"
+        "    nbformat.write(nb, '/work/executed.ipynb')\n"
+    )
     inner = (
         "mkdir -p /tmp/jupyter /tmp/mpl && "
-        f"timeout {int(timeout)} papermill /work/{nb_name} /work/executed.ipynb "
-        f"-k python3 --execution-timeout {int(timeout)} --no-progress-bar --cwd /work"
+        f"timeout {int(timeout)} python - <<'PDA_NB_EOF'\n{py}PDA_NB_EOF\n"
     )
     cmd = [
         "docker", "run",

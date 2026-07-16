@@ -19,8 +19,12 @@ it grades on the next fire.
   error the submission is written `status='error'` with a short message and the loop moves on.
 - One bad *question* never fails the submission: `grade_question` catches per-grader
   exceptions and returns an `error` verdict for just that question.
-- A notebook that fails to execute (syntax error, timeout, no answer dump) →
-  `status='error'` with a helpful reason, not a crash.
+- One erroring **cell** never voids the whole submission: the notebook runs with
+  nbclient `allow_errors=True`, so execution continues past a failing cell, the
+  answer-dump still runs, and each cell is graded on its own (the broken cell scored
+  low with `evidence: errored`, the rest graded normally) — partial credit, not a zero.
+- A notebook that can't execute at all (kernel dies, total wall-clock timeout, no
+  answer dump) → `status='error'` with a helpful reason (incl. the stderr tail), not a crash.
 - LLM-judge failures degrade to the review queue (`verdict='review'`), batch continues.
 
 ## Sandbox (STRICT §1.4)

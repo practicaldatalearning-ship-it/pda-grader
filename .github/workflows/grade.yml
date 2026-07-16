@@ -89,7 +89,7 @@ jobs:
         run: docker build -t pda-sandbox sandbox/
 
       - name: Sanity-check the sandbox (no network, imports work)
-        run: docker run --rm --network none pda-sandbox python -c "import pandas, sklearn, papermill; print('ok')"
+        run: docker run --rm --network none pda-sandbox python -c "import pandas, sklearn, nbclient, nbformat; print('ok')"
 
       - name: Run the grader batch
         run: python -m grader.main

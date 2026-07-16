@@ -3,6 +3,8 @@ name: grade
 # Triggered by Supabase pg_cron -> repository_dispatch (hourly, see doc/TRIGGER.md),
 # or manually via "Run workflow". NEVER by fork PRs (they receive no secrets).
 on:
+  schedule:
+    - cron: "0 * * * *"        # hourly — GitHub-native scheduler; no external token/dispatch needed
   repository_dispatch:
     types: [grade-batch]
   workflow_dispatch:

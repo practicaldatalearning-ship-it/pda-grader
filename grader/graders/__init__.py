@@ -17,6 +17,7 @@ class GradeContext:
     artifacts: dict[str, bytes] = field(default_factory=dict)  # out_dir files (predictions.csv, tests.json…)
     labels: dict[str, bytes] = field(default_factory=dict)     # question_id -> hidden label CSV bytes
     data_files: dict[str, bytes] = field(default_factory=dict) # data file name -> bytes (for `property`)
+    produced_files: dict[str, bytes] = field(default_factory=dict)  # files the STUDENT wrote (name->bytes), inputs excluded
     tests_results: dict[str, float] = field(default_factory=dict)  # question_id -> fraction passed
     judge: Optional[Callable] = None                           # llm_judge.judge or None
 

@@ -1,6 +1,13 @@
-"""`prediction` — score the student's predictions.csv against hidden labels.
-config: {metric, thresholds: [[bound,'full'|points], ...], id_col?, target_col?, pred_col?}
+"""`prediction` — score the student's predictions against hidden labels.
+config: {metric, thresholds, id_col?, target_col?, pred_col?, pred_var?}
 expected: null (the hidden labels live in assignment-content; grader downloads them).
+
+The student's predictions are located flexibly, in order:
+  (a) a `predictions.csv` artifact (notebook-written or uploaded),
+  (b) a dumped predictions variable (list / ndarray / Series / DataFrame) — named by
+      config.pred_var, else common names (predictions/preds/y_pred/prediction),
+  (c) the only *.csv the student produced (any name).
+A precise error is returned only when truly none is found.
 
 thresholds map the metric value to a score. For lower-is-better metrics (rmse/mae/
 logloss), a bound means "value <= bound → that score" (checked best-first). For
@@ -11,12 +18,57 @@ from __future__ import annotations
 import io
 
 from . import GradeContext, QResult, _verdict
+from ..extract import deserialize_df
 from ..metrics import compute_metric, lower_is_better
+
+_PRED_VAR_NAMES = ("predictions", "preds", "y_pred", "prediction", "pred")
 
 
 def _read_csv(raw: bytes):
     import pandas as pd
     return pd.read_csv(io.BytesIO(raw))
+
+
+def _df_from_variable(val):
+    """Turn a dumped predictions variable into a DataFrame, or None if not usable.
+    Accepts a DataFrame dump, a list/tuple of scalars, or a nested list."""
+    import pandas as pd
+    if val is None:
+        return None
+    d = deserialize_df(val)  # {__df__,...} -> DataFrame; else returns val unchanged
+    if isinstance(d, pd.DataFrame):
+        return d if len(d.columns) else None
+    if isinstance(val, (list, tuple)) and len(val) > 0:
+        if all(isinstance(x, (list, tuple)) for x in val):
+            return pd.DataFrame(list(val))
+        return pd.DataFrame({"prediction": list(val)})
+    return None
+
+
+def _resolve_predictions(question: dict, ctx: GradeContext, cfg: dict):
+    """Return (preds_df, error). error is a precise message only when nothing is found."""
+    # (a) predictions.csv — collected by the runner, or a student upload of that name
+    raw = ctx.artifacts.get("predictions.csv") or ctx.produced_files.get("predictions.csv")
+    if raw is not None:
+        return _read_csv(raw), None
+
+    # (b) a dumped predictions variable
+    names = ([cfg["pred_var"]] if cfg.get("pred_var") else list(_PRED_VAR_NAMES))
+    for name in names:
+        if name and name in ctx.answers and ctx.answers[name] is not None:
+            df = _df_from_variable(ctx.answers[name])
+            if df is not None:
+                return df, None
+
+    # (c) the only *.csv the student produced (any name)
+    csvs = [b for n, b in ctx.produced_files.items() if n.lower().endswith(".csv")]
+    if len(csvs) == 1:
+        return _read_csv(csvs[0]), None
+    if len(csvs) > 1:
+        return None, ("Multiple CSV files were produced — name your predictions file "
+                      "`predictions.csv` (or set a predictions variable) so it can be graded.")
+    return None, ("No predictions found — write a `predictions.csv`, or assign your predictions "
+                  "to a `predictions` variable (list / array / DataFrame).")
 
 
 def _normalize_thresholds(thresholds, pts: float) -> list[tuple[float, float]]:
@@ -56,18 +108,21 @@ def grade(question: dict, ctx: GradeContext) -> QResult:
     metric = cfg.get("metric") or "rmse"
     thresholds = cfg.get("thresholds") or []
 
-    preds_raw = ctx.artifacts.get("predictions.csv")
     labels_raw = ctx.labels.get(qid)
-    if preds_raw is None:
-        return QResult(qid, 0.0, pts, "fail", "No predictions.csv was produced.")
     if labels_raw is None:
         return QResult(qid, 0.0, pts, "error", "Hidden labels missing for this question.")
 
     try:
-        preds = _read_csv(preds_raw)
+        preds, err = _resolve_predictions(question, ctx, cfg)
+    except Exception as e:
+        return QResult(qid, 0.0, pts, "error", f"Could not read predictions: {e}")
+    if preds is None:
+        return QResult(qid, 0.0, pts, "fail", err or "No predictions found.")
+
+    try:
         labels = _read_csv(labels_raw)
     except Exception as e:
-        return QResult(qid, 0.0, pts, "error", f"Could not read predictions/labels: {e}")
+        return QResult(qid, 0.0, pts, "error", f"Could not read labels: {e}")
 
     id_col = cfg.get("id_col")
     target_col = cfg.get("target_col") or (labels.columns[-1] if len(labels.columns) else None)

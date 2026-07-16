@@ -62,6 +62,9 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
         nb_bytes = supa.download(nb_handle["bucket"], nb_handle["path"])
         nb = nbformat.reads(nb_bytes.decode("utf-8", "replace"), as_version=4)
 
+        # Track every file we place in /work so we can later tell which files the
+        # STUDENT produced (for prediction's "the only CSV they wrote" fallback).
+        input_names: set[str] = {"nb.ipynb", "executed.ipynb", "answers.json", "tests.json"}
         data_files: dict[str, bytes] = {}
         for d in bundle.get("data") or []:
             try:
@@ -69,9 +72,11 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
                 name = _basename(d["path"])
                 data_files[name] = b
                 (work / name).write_bytes(b)
+                input_names.add(name)
             except Exception as e:
                 log.warning("data download failed %s: %s", d.get("path"), e)
-        # student's extra uploads (e.g. their own predictions.csv) land in /work
+        # student's extra uploads (e.g. their own predictions.csv) land in /work.
+        # These ARE student-produced, so they are NOT added to input_names.
         for x in bundle.get("extra") or []:
             try:
                 b = supa.download(x["bucket"], x["path"])
@@ -116,11 +121,24 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
         # 4) extract answers + test results + predictions
         answers = read_answers(res.artifacts.get("answers.json"))
         tests_results = read_answers(res.artifacts.get("tests.json"))
+        # Files the student produced (any file in /work that wasn't an input we placed).
+        # Lets prediction grading find a differently-named CSV the student wrote.
+        produced_files: dict[str, bytes] = {}
+        try:
+            for p in Path(res.work_dir).iterdir():
+                if p.is_file() and p.name not in input_names:
+                    try:
+                        produced_files[p.name] = p.read_bytes()
+                    except Exception:
+                        pass
+        except Exception as e:
+            log.warning("could not scan produced files: %s", e)
         ctx = GradeContext(
             answers=answers,
             artifacts=res.artifacts,
             labels=labels,
             data_files=data_files,
+            produced_files=produced_files,
             tests_results={k: float(v) for k, v in tests_results.items()},
             judge=judge,
         )

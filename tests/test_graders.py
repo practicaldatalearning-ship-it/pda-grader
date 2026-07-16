@@ -312,3 +312,93 @@ def test_mixed_assignment_total():
     ]
     total = sum(grade_question(qq, ctx).score for qq in questions)
     assert total == 20  # 2 + 2 + 2 + 4 + 10
+
+
+# --- prediction: flexible source resolution --------------------------------
+def _auto_q(points, values, config=None, qid="qa"):
+    """Build an `auto` question. values=None -> expected has no 'values' key."""
+    exp = {"values": values} if values is not None else {}
+    return {"id": qid, "cell_ref": "1", "var_name": None, "tag": "auto",
+            "points": points, "config": config or {}, "expected": exp}
+
+
+def test_prediction_from_dumped_variable():
+    labels = pd.DataFrame({"price": [100, 200, 300]})
+    ctx = GradeContext(answers={"predictions": [105, 195, 305]},
+                       labels={"q1": labels.to_csv(index=False).encode()})
+    cfg = {"metric": "rmse", "target_col": "price", "thresholds": {"pass": 30}}
+    r = grade_question(q("prediction", 10, config=cfg), ctx)
+    assert r.score == 10  # rmse ~5
+
+
+def test_prediction_from_pred_var_config():
+    labels = pd.DataFrame({"price": [100, 200, 300]})
+    ctx = GradeContext(answers={"my_out": [100, 200, 300]},
+                       labels={"q1": labels.to_csv(index=False).encode()})
+    cfg = {"metric": "rmse", "target_col": "price", "pred_var": "my_out", "thresholds": {"pass": 30}}
+    r = grade_question(q("prediction", 10, config=cfg), ctx)
+    assert r.score == 10
+
+
+def test_prediction_from_only_produced_csv():
+    preds = pd.DataFrame({"price": [100, 200, 300]})
+    labels = pd.DataFrame({"price": [100, 200, 300]})
+    ctx = GradeContext(produced_files={"my_output.csv": preds.to_csv(index=False).encode()},
+                       labels={"q1": labels.to_csv(index=False).encode()})
+    cfg = {"metric": "rmse", "target_col": "price", "thresholds": {"pass": 30}}
+    r = grade_question(q("prediction", 10, config=cfg), ctx)
+    assert r.score == 10
+
+
+def test_prediction_multiple_csvs_precise_message():
+    ctx = GradeContext(produced_files={"a.csv": b"x\n1\n", "b.csv": b"y\n2\n"},
+                       labels={"q1": b"price\n1\n"})
+    r = grade_question(q("prediction", 10, config={"metric": "rmse"}), ctx)
+    assert r.verdict == "fail" and "Multiple CSV" in r.feedback
+
+
+def test_prediction_none_found_precise_message():
+    ctx = GradeContext(labels={"q1": b"price\n1\n"})
+    r = grade_question(q("prediction", 10, config={"metric": "rmse"}), ctx)
+    assert r.verdict == "fail" and "No predictions found" in r.feedback
+
+
+# --- auto: scoring + non-gradable handling ---------------------------------
+def test_auto_all_or_nothing_default_partial_is_zero():
+    ctx = GradeContext(answers={"a": 1, "b": 2})
+    r = grade_question(_auto_q(4, {"a": 1, "b": 99}), ctx)  # b wrong
+    assert r.score == 0 and r.verdict == "fail"
+
+
+def test_auto_all_correct_full():
+    ctx = GradeContext(answers={"a": 1, "b": 2})
+    r = grade_question(_auto_q(4, {"a": 1, "b": 2}), ctx)
+    assert r.score == 4 and r.verdict == "pass"
+
+
+def test_auto_proportional_scoring():
+    ctx = GradeContext(answers={"a": 1, "b": 2})
+    r = grade_question(_auto_q(4, {"a": 1, "b": 99}, config={"scoring": "proportional"}), ctx)
+    assert r.score == 2 and r.verdict == "partial"
+
+
+def test_auto_empty_values_is_review_not_error():
+    r = grade_question(_auto_q(5, {}), GradeContext())
+    assert r.verdict == "review" and "no gradable variable" in r.feedback.lower()
+
+
+def test_auto_not_authored_is_review():
+    r = grade_question(_auto_q(5, None), GradeContext())
+    assert r.verdict == "review" and "not yet authored" in r.feedback.lower()
+
+
+def test_auto_all_null_expected_is_review():
+    ctx = GradeContext(answers={"model": None})
+    r = grade_question(_auto_q(5, {"model": None}), ctx)
+    assert r.verdict == "review" and "human review" in r.feedback.lower()
+
+
+def test_auto_mixed_gradable_and_null_is_review_with_provisional_score():
+    ctx = GradeContext(answers={"a": 1, "model": None})
+    r = grade_question(_auto_q(4, {"a": 1, "model": None}), ctx)  # a matches; model ungradable
+    assert r.verdict == "review" and r.score == 4  # all_or_nothing over the 1 gradable var

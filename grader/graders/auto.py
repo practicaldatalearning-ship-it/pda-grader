@@ -1,6 +1,6 @@
 """`auto` — grade a cell against the answer key automatically.
 
-config:   {tolerance?}
+config:   {tolerance?, scoring?}   scoring ∈ {"all_or_nothing" (default), "proportional"}
 expected: {"values": {var_name: solution_value, ...}}
 
 The variables were parsed from the graded cell of the answer key at authoring
@@ -11,7 +11,9 @@ compare the student's dumped values for the SAME variables, by type:
   * DataFrames -> same columns, cells compared elementwise
   * dicts      -> same keys + equal values
   * strings/bools/None -> normalized equality
-Score is proportional to how many of the cell's variables match.
+Scoring is all_or_nothing by default (full marks only if every variable matches);
+set config.scoring="proportional" for points × matched/total. A cell with no
+gradable variable, or whose answer-key value didn't serialize (null), routes to review.
 """
 from __future__ import annotations
 
@@ -45,15 +47,32 @@ def grade(question: dict, ctx: GradeContext) -> QResult:
     cfg = question.get("config") or {}
     exp = question.get("expected") or {}
     values = exp.get("values") if isinstance(exp, dict) else None
-    if not values:
-        return QResult(qid, 0.0, pts, "error",
-                       "No expected values captured — re-publish so the grader can author this cell.")
+
+    # Not authored yet vs. authored-but-nothing-to-grade → both go to human review
+    # with a clear message, never a confusing "error".
+    if values is None:
+        return QResult(qid, 0.0, pts, "review",
+                       "Not yet authored — re-publish so the grader can capture the answer key for this cell.")
+    if len(values) == 0:
+        return QResult(qid, 0.0, pts, "review",
+                       "This cell has no gradable variable — nothing to auto-grade.")
+
+    # A null captured value = the solution wasn't comparable (a model/figure/etc.);
+    # those variables can't be auto-graded → route the cell to review.
+    gradable = {v: e for v, e in values.items() if e is not None}
+    ungradable = [v for v, e in values.items() if e is None]
+
+    if not gradable:
+        names = ", ".join(f"`{v}`" for v in ungradable)
+        return QResult(qid, 0.0, pts, "review",
+                       f"Cannot auto-grade: the answer key value(s) for {names} are not comparable "
+                       f"(e.g. a model or figure). Needs human review.")
 
     tol = float(cfg.get("tolerance") or 0)
-    total = len(values)
+    total = len(gradable)
     matched = 0
     misses: list[str] = []
-    for var, expected_val in values.items():
+    for var, expected_val in gradable.items():
         student_val = ctx.answers.get(var)
         if _auto_equal(student_val, expected_val, tol):
             matched += 1
@@ -62,6 +81,19 @@ def grade(question: dict, ctx: GradeContext) -> QResult:
         else:
             misses.append(f"`{var}`: expected {expected_val!r}, got {student_val!r}")
 
-    score = round(pts * matched / total, 4) if total else 0.0
+    # scoring: all_or_nothing (default) — full only if every gradable var matches;
+    # proportional — points × matched/total. The pda-admin editor sends the choice.
+    scoring = str(cfg.get("scoring") or "all_or_nothing").lower()
+    if scoring == "proportional":
+        score = round(pts * matched / total, 4)
+    else:
+        score = pts if matched == total else 0.0
+
     fb = "Correct." if matched == total else f"{matched}/{total} correct. " + "; ".join(misses)
+    if ungradable:
+        # provisional score, but flag for human review of the non-comparable vars
+        note = ", ".join(f"`{v}`" for v in ungradable)
+        return QResult(qid, score, pts, "review",
+                       (fb + f" Note: {note} could not be auto-graded (non-comparable answer key) "
+                        "— needs human review.")[:500])
     return QResult(qid, score, pts, _verdict(score, pts), fb[:500])

@@ -55,6 +55,19 @@ class CoachJudge:
             raise RuntimeError(f"coach error: {str(data.get('error'))[:200]}")
         return {str(x.get("qid")): x for x in data.get("results", [])}
 
+    def grade_cells(self, items: list[dict]) -> dict[str, dict]:
+        """V2 evidence-anchored path: grade a batch of pre-built cell items in ONE call.
+        Each item = {qid, points, type, prompt, solution, answer}. Returns
+        {qid: {"score": float, "feedback": str}} with the coach's clamped integer score."""
+        if not items:
+            return {}
+        raw = self._grade_items(items)  # {qid: {qid, score, feedback}}
+        out: dict[str, dict] = {}
+        for qid, r in raw.items():
+            out[str(qid)] = {"score": float(r.get("score") or 0),
+                             "feedback": str(r.get("feedback") or "")}
+        return out
+
     def judge(self, question_prompt: str, rubric: list[dict], student_answer: str,
               solution: str = "", qtype: str = "explanation") -> JudgeResult:
         """rubric: [{text, points}]. Returns JudgeResult with summed score + confidence."""

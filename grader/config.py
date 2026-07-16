@@ -35,6 +35,7 @@ class Config:
     docker_image: str          # sandbox image tag
     run_timeout: int           # per-notebook wall-clock cap (seconds)
     grade_author_jobs: bool    # also run G0b author jobs this run
+    v2: bool = True            # evidence-anchored AI-vs-reference grading (default path)
     # Object storage lives in Cloudflare R2 (S3 API). DB stays on Supabase.
     r2_account_id: str = ""
     r2_access_key: str = ""
@@ -93,6 +94,7 @@ def load_config() -> Config:
         docker_image=_optional("GRADER_IMAGE", "pda-sandbox"),
         run_timeout=int(_optional("GRADER_RUN_TIMEOUT", "300") or "300"),
         grade_author_jobs=_optional("GRADER_AUTHOR_JOBS", "1") not in ("0", "false", "no"),
+        v2=_optional("GRADER_V2", "1") not in ("0", "false", "no"),
         r2_account_id=_optional("R2_ACCOUNT_ID"),
         r2_access_key=_optional("R2_ACCESS_KEY_ID"),
         r2_secret=_optional("R2_SECRET_ACCESS_KEY"),

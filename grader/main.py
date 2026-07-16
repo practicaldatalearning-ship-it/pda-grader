@@ -18,6 +18,7 @@ import nbformat
 from .config import Config, load_config
 from .extract import (inject_dump, inject_tests, read_answers, cell_assign_targets, cell_source)
 from .graders import GradeContext, grade_question
+from .judge_v2 import grade_submission_v2
 from .llm_judge import make_judge
 from .runner import RunResult, run_notebook
 from .supa import Supa
@@ -43,6 +44,29 @@ def _err_detail(res: RunResult, fallback: str) -> str:
 
 def _basename(path: str) -> str:
     return posixpath.basename(path or "")
+
+
+def _parse_nb(raw: Optional[bytes]):
+    """Parse notebook bytes into a NotebookNode, or None (never raises)."""
+    if not raw:
+        return None
+    try:
+        return nbformat.reads(raw.decode("utf-8", "replace"), as_version=4)
+    except Exception:
+        return None
+
+
+def _download_solution_nb(supa: Supa, assignment: dict):
+    """Download + parse the answer-key notebook for V2 reference cells. Best-effort:
+    the judge still grades on student work + evidence + rubric note if it's absent."""
+    path = (assignment or {}).get("solution_notebook_path")
+    if not path:
+        return None
+    try:
+        return _parse_nb(supa.download("assignment-content", path))
+    except Exception as e:
+        log.warning("solution notebook download failed (%s) — grading without reference", e)
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -143,16 +167,23 @@ def grade_submission(supa: Supa, cfg: Config, submission_id: str, judge) -> None
             judge=judge,
         )
 
-        # 5) grade each question
-        per_question: list[dict] = []
-        total = 0.0
-        review_flags: list[tuple[str, str, float]] = []
-        for q in questions:
-            r = grade_question(q, ctx)
-            total += r.score
-            per_question.append(r.as_dict())
-            if r.verdict == "review":
-                review_flags.append((r.question_id, "llm_low_confidence", r.score))
+        # 5) grade each question.
+        if cfg.v2:
+            # V2 (default): evidence-anchored AI-vs-reference. Deterministic tags stay
+            # authoritative; everything else is scored by ONE batched judge call against
+            # the answer-key cell + the student's executed cell + deterministic evidence.
+            exec_nb = _parse_nb(res.artifacts.get("executed.ipynb"))
+            ref_nb = _download_solution_nb(supa, assignment)
+            per_question = grade_submission_v2(questions, ctx, ref_nb, exec_nb, judge)
+        else:
+            per_question = [grade_question(q, ctx).as_dict() for q in questions]
+
+        total = sum(float(d.get("score") or 0) for d in per_question)
+        review_flags = [(str(d.get("question_id")),
+                         "injection_suspected" if (d.get("evidence") or {}).get("injection_suspected")
+                         else "llm_low_confidence",
+                         float(d.get("score") or 0))
+                        for d in per_question if d.get("verdict") == "review"]
 
         # 6) write result. Anything flagged → needs_review (provisional result still
         # persisted); a clean run → graded (which also rolls up lesson progress).

@@ -1,0 +1,32 @@
+name: keepalive
+
+# GitHub disables scheduled workflows after 60 days with NO commits to the repo
+# (workflow *runs* don't count). This job makes one tiny commit a week using the
+# built-in GITHUB_TOKEN (no PAT), which resets that clock — so the hourly `grade`
+# schedule never auto-disables. It runs weekly (7 << 60), so it keeps itself alive
+# too. No external token, no Supabase, no dispatch.
+on:
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 03:17 UTC (off-peak → low scheduler lag)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Touch the keepalive marker and push
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keepalive
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive
+          git commit -m "chore: keepalive [skip ci]" || { echo "no change"; exit 0; }
+          git push
